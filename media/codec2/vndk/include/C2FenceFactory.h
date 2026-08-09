@@ -67,7 +67,39 @@ struct _C2FenceFactory {
      * \param validate          If true, the fence fd will be validated to ensure
      *                          it is a valid pending sync fence fd.
      */
-    static C2Fence CreateSyncFence(int fenceFd, bool validate = true);
+    static C2Fence CreateSyncFence(int fenceFd, bool validate);
+
+    /*
+     * arcfox (Motorola razr 50 ultra) ABI shim -- restores the one-argument
+     * symbol that Qualcomm's prebuilt codec2 blobs were built against.
+     *
+     * `validate` was added upstream with a default of true. A default argument is
+     * source-compatible but NOT ABI-compatible: the mangled name changed from
+     * _ZN15_C2FenceFactory15CreateSyncFenceEi to ...Eib. So
+     * /vendor/lib64/libqcodec2_core.so cannot load:
+     *
+     *   E vendor.qti.media.c2@1.0-service: QC2HALService: failed to open
+     *     libqcodec2_core.so: dlopen failed: cannot locate symbol
+     *     "_ZN15_C2FenceFactory15CreateSyncFenceEi"
+     *
+     * vendor-qti-media-c2-hal-1-0 then exits 0 within ~60 ms, forever, so
+     * android.hardware.media.c2@1.0::IComponentStore never registers and
+     * media.swcodec blocks on its MAIN thread waiting for it. No hardware codecs.
+     *
+     * Resolving every undefined symbol of the whole libqcodec2_{core,base,hooks,
+     * utils,platform,basecodec} chain against all 2134 .so files in
+     * vendor+system+system_ext leaves exactly ONE unresolved: this symbol.
+     *
+     * The default is REMOVED from the two-argument form rather than kept, because
+     * keeping it alongside this overload would make every existing one-argument
+     * call ambiguous (there is one in-tree: C2IgbaBuffer.cpp:269). Behaviour is
+     * unchanged -- the old default was true, and that is what this forwards.
+     *
+     * Do NOT "fix" this instead by adding a /default entry to a VINTF manifest.
+     * The service is not failing to register; it is dying before it can. Declaring
+     * a HAL that cannot register is what cost bc18 its boot.
+     */
+    static C2Fence CreateSyncFence(int fenceFd);
 
     /*
      * Create C2Fence from list of sync fence fds, while also merging them to

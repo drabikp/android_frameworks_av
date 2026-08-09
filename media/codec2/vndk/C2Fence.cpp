@@ -472,6 +472,13 @@ std::vector<int> ExtractFdsFromCodec2SyncFence(const C2Fence& fence) {
     return retFds;
 }
 
+// arcfox ABI shim: one-argument form the QTI codec2 blobs link against. See the
+// comment on the declaration in C2FenceFactory.h. `true` reproduces the default
+// that used to be on the two-argument overload, so behaviour is unchanged.
+C2Fence _C2FenceFactory::CreateSyncFence(int fenceFd) {
+    return CreateSyncFence(fenceFd, true);
+}
+
 C2Fence _C2FenceFactory::CreateSyncFence(int fenceFd, bool validate) {
     std::shared_ptr<C2Fence::Impl> p;
     if (fenceFd >= 0) {
