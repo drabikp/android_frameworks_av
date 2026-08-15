@@ -180,7 +180,7 @@ EXPORT
 camera_status_t ACameraCaptureSessionShared_startStreaming(
     ACameraCaptureSession* session,
     /*optional*/ACameraCaptureSession_captureCallbacksV2* callbacks,
-    int numOutputWindows, ANativeWindow** windows,
+    int numOutputWindows, ACameraWindowType** windows,
     /*optional*/int* captureSequenceId) {
     ATRACE_CALL();
     return startStreamingTemplate(session, callbacks, numOutputWindows, windows,
@@ -191,7 +191,7 @@ EXPORT
 camera_status_t ACameraCaptureSessionShared_logicalCamera_startStreaming(
     ACameraCaptureSession* session,
     /*optional*/ACameraCaptureSession_logicalCamera_captureCallbacksV2* callbacks,
-    int numOutputWindows, ANativeWindow** windows,
+    int numOutputWindows, ACameraWindowType** windows,
     /*optional*/int* captureSequenceId) {
     ATRACE_CALL();
     return  startStreamingTemplate(session, callbacks, numOutputWindows, windows,
@@ -250,7 +250,7 @@ camera_status_t ACameraCaptureSession_setWindowPreparedCallback(
 EXPORT
 camera_status_t ACameraCaptureSession_prepareWindow(
         ACameraCaptureSession* session,
-        ANativeWindow *window) {
+        ACameraWindowType *window) {
     ATRACE_CALL();
     if (session == nullptr || window == nullptr) {
         ALOGE("%s: Error: session %p / window %p is null", __FUNCTION__, session, window);

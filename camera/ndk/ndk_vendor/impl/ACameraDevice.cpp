@@ -26,7 +26,7 @@
 #include <aidl/android/frameworks/cameraservice/device/CameraMetadata.h>
 #include <aidl/android/frameworks/cameraservice/device/OutputConfiguration.h>
 #include <aidl/android/frameworks/cameraservice/device/SessionConfiguration.h>
-#include <android/native_window_aidl.h>
+#include <aidlcommonsupport/NativeHandle.h>
 #include <inttypes.h>
 #include <map>
 #include <utility>
@@ -59,7 +59,6 @@ namespace acam {
 using AidlCameraMetadata = ::aidl::android::frameworks::cameraservice::device::CameraMetadata;
 using ::aidl::android::frameworks::cameraservice::device::OutputConfiguration;
 using ::aidl::android::frameworks::cameraservice::device::SessionConfiguration;
-using ::aidl::android::view::Surface;
 using ::ndk::ScopedAStatus;
 
 // Static member definitions
@@ -232,9 +231,8 @@ camera_status_t CameraDevice::isSessionConfigurationSupported(
         OutputConfiguration& outputStream = sessionConfig.outputStreams[index];
         outputStream.rotation = utils::convertToAidl(output.mRotation);
         outputStream.windowGroupId = -1;
-        auto& surfaces = outputStream.surfaces;
-        surfaces.reserve(output.mSharedWindows.size() + 1);
-        surfaces.emplace_back(output.mWindow);
+        outputStream.windowHandles.resize(output.mSharedWindows.size() + 1);
+        outputStream.windowHandles[0] = std::move(dupToAidl(output.mWindow));
         outputStream.physicalCameraId = output.mPhysicalCameraId;
         index++;
     }
@@ -300,12 +298,12 @@ camera_status_t CameraDevice::updateOutputConfigurationLocked(ACaptureSessionOut
 
     OutputConfiguration outConfig;
     outConfig.rotation = utils::convertToAidl(output->mRotation);
-    auto& surfaces = outConfig.surfaces;
-    surfaces.reserve(output->mSharedWindows.size() + 1);
-    surfaces.emplace_back(output->mWindow);
+    outConfig.windowHandles.resize(output->mSharedWindows.size() + 1);
+    outConfig.windowHandles[0] = std::move(dupToAidl(output->mWindow));
     outConfig.physicalCameraId = output->mPhysicalCameraId;
+    int i = 1;
     for (auto& anw : output->mSharedWindows) {
-        surfaces.emplace_back(anw);
+        outConfig.windowHandles[i++] = std::move(dupToAidl(anw));
     }
 
     auto remoteRet = mRemote->updateOutputConfiguration(streamId,
@@ -342,7 +340,7 @@ camera_status_t CameraDevice::updateOutputConfigurationLocked(ACaptureSessionOut
     return ACAMERA_OK;
 }
 
-camera_status_t CameraDevice::prepareLocked(ANativeWindow *window) {
+camera_status_t CameraDevice::prepareLocked(ACameraWindowType *window) {
     camera_status_t ret = checkCameraClosedOrErrorLocked();
     if (ret != ACAMERA_OK) {
         return ret;
@@ -354,7 +352,11 @@ camera_status_t CameraDevice::prepareLocked(ANativeWindow *window) {
 
     int32_t streamId = -1;
     for (auto& kvPair : mConfiguredOutputs) {
-        if (window == kvPair.second.first) {
+        // Compare by content, not by pointer: the handle makes an AIDL round trip
+        // (dupToAidl/makeFromAidl) and comes back at a different address. Called
+        // explicitly rather than via operator==, which is ambiguous under C++20's
+        // reversed candidate rules when one side is a raw pointer.
+        if (isWindowNativeHandleEqual(window, kvPair.second.first)) {
             streamId = kvPair.first;
             break;
         }
@@ -389,19 +391,18 @@ camera_status_t CameraDevice::allocateCaptureRequestLocked(
     std::vector<int32_t> requestSurfaceIdxList;
 
     for (auto& outputTarget : request->targets->mOutputs) {
-        ANativeWindow *anw = outputTarget.mWindow;
+        native_handle_ptr_wrapper anw = outputTarget.mWindow;
         bool found = false;
         req->mSurfaceList.push_back(anw);
         // lookup stream/surface ID
         for (const auto& kvPair : mConfiguredOutputs) {
             int streamId = kvPair.first;
             const OutputConfiguration& outConfig = kvPair.second.second;
-            const auto& surfaces = outConfig.surfaces;
-            for (int surfaceId = 0; surfaceId < (int) surfaces.size(); surfaceId++) {
+            const auto& windowHandles = outConfig.windowHandles;
+            for (int surfaceId = 0; surfaceId < (int) windowHandles.size(); surfaceId++) {
                 // If two window handles point to the same native window,
                 // they have the same surfaces.
-                auto& surface = surfaces[surfaceId];
-                if (anw == surface.get()) {
+                if (utils::isWindowNativeHandleEqual(anw, windowHandles[surfaceId])) {
                     found = true;
                     requestStreamIdxList.push_back(streamId);
                     requestSurfaceIdxList.push_back(surfaceId);
@@ -413,7 +414,7 @@ camera_status_t CameraDevice::allocateCaptureRequestLocked(
             }
         }
         if (!found) {
-            ALOGE("Unconfigured output target %p in capture request!", anw);
+            ALOGE("Unconfigured output target %p in capture request!", anw.mWindow);
             return ACAMERA_ERROR_INVALID_PARAMETER;
         }
     }
@@ -473,7 +474,7 @@ ACaptureRequest* CameraDevice::allocateACaptureRequest(sp<CaptureRequest>& req,
     }
     pRequest->targets = new ACameraOutputTargets();
     for (size_t i = 0; i < req->mSurfaceList.size(); i++) {
-        ANativeWindow *anw = req->mSurfaceList[i];
+        native_handle_ptr_wrapper anw = req->mSurfaceList[i];
         ACameraOutputTarget outputTarget(anw);
         pRequest->targets->mOutputs.insert(std::move(outputTarget));
     }
@@ -662,21 +663,20 @@ camera_status_t CameraDevice::configureStreamsLocked(const ACaptureSessionOutput
         return ret;
     }
 
-    std::map<ANativeWindow *, OutputConfiguration> windowToConfig;
+    std::map<native_handle_ptr_wrapper, OutputConfiguration> handleToConfig;
     for (const auto& outConfig : outputs->mOutputs) {
-        ANativeWindow *anw = outConfig.mWindow;
+        native_handle_ptr_wrapper anw = outConfig.mWindow;
         OutputConfiguration outConfigInsert;
         outConfigInsert.rotation = utils::convertToAidl(outConfig.mRotation);
         outConfigInsert.windowGroupId = -1;
-        auto& surfaces = outConfigInsert.surfaces;
-        surfaces.reserve(outConfig.mSharedWindows.size() + 1);
-        surfaces.emplace_back(anw);
+        outConfigInsert.windowHandles.resize(outConfig.mSharedWindows.size() + 1);
+        outConfigInsert.windowHandles[0] = std::move(dupToAidl(anw));
         outConfigInsert.physicalCameraId = outConfig.mPhysicalCameraId;
-        windowToConfig.insert({anw, std::move(outConfigInsert)});
+        handleToConfig.insert({anw, std::move(outConfigInsert)});
     }
 
-    std::set<ANativeWindow *> addSet;
-    for (auto& kvPair : windowToConfig) {
+    std::set<native_handle_ptr_wrapper> addSet;
+    for (auto& kvPair : handleToConfig) {
         addSet.insert(kvPair.first);
     }
 
@@ -689,8 +689,8 @@ camera_status_t CameraDevice::configureStreamsLocked(const ACaptureSessionOutput
         auto& anw = outputPair.first;
         auto& configuredOutput = outputPair.second;
 
-        auto itr = windowToConfig.find(anw);
-        if (itr != windowToConfig.end() && (itr->second) == configuredOutput) {
+        auto itr = handleToConfig.find(anw);
+        if (itr != handleToConfig.end() && (itr->second) == configuredOutput) {
             deleteList.push_back(streamId);
         } else {
             addSet.erase(anw);
@@ -740,13 +740,13 @@ camera_status_t CameraDevice::configureStreamsLocked(const ACaptureSessionOutput
     // add new streams
     for (const auto &anw : addSet) {
         int32_t streamId;
-        auto itr = windowToConfig.find(anw);
+        auto itr = handleToConfig.find(anw);
         remoteRet = mRemote->createStream(itr->second, &streamId);
         CHECK_TRANSACTION_AND_RET(remoteRet, "createStream()")
         mConfiguredOutputs.insert(std::make_pair(streamId,
                                                  std::make_pair(anw,
                                                                 std::move(itr->second))));
-        windowToConfig.erase(itr);
+        handleToConfig.erase(itr);
     }
 
     AidlCameraMetadata aidlParams;
@@ -893,9 +893,9 @@ void CameraDevice::onCaptureErrorLocked(ErrorCode errorCode,
         // Get the surfaces corresponding to the error stream id, go through
         // them and try to match the surfaces in the corresponding
         // CaptureRequest.
-        const auto& errorSurfaces =
-                outputPairIt->second.second.surfaces;
-        for (const auto& errorSurface : errorSurfaces) {
+        const auto& errorWindowHandles =
+                outputPairIt->second.second.windowHandles;
+        for (const auto& errorWindowHandle : errorWindowHandles) {
             for (const auto &requestStreamAndWindowId :
                         request->mCaptureRequest.streamAndWindowIds) {
                 // Go through the surfaces in the capture request and see which
@@ -910,11 +910,12 @@ void CameraDevice::onCaptureErrorLocked(ErrorCode errorCode,
                     return;
                 }
 
-                const auto &requestSurfaces = requestSurfacePairIt->second.second.surfaces;
-                auto& requestSurface = requestSurfaces[requestWindowId];
+                const auto &requestWindowHandles =
+                        requestSurfacePairIt->second.second.windowHandles;
 
-                if (requestSurface == errorSurface) {
-                    const ANativeWindow *anw = requestSurface.get();
+                if (requestWindowHandles[requestWindowId] == errorWindowHandle) {
+                    const native_handle_t* anw = makeFromAidl(
+                            requestWindowHandles[requestWindowId]);
                     ALOGV("Camera %s Lost output buffer for ANW %p frame %" PRId64,
                             getId(), anw, frameNumber);
 
@@ -1133,7 +1134,7 @@ void CameraDevice::CallbackHandler::onMessageReceived(
                     if (onWindowPrepared == nullptr) {
                         return;
                     }
-                    ANativeWindow* anw;
+                    native_handle_t* anw;
                     found = msg->findPointer(kAnwKey, (void**) &anw);
                     if (!found) {
                         ALOGE("%s: Cannot find ANativeWindow: %d!", __FUNCTION__, __LINE__);
@@ -1390,10 +1391,10 @@ void CameraDevice::CallbackHandler::onMessageReceived(
                         return;
                     }
 
-                    ANativeWindow* anw;
+                    native_handle_t* anw;
                     found = msg->findPointer(kAnwKey, (void**) &anw);
                     if (!found) {
-                        ALOGE("%s: Cannot find ANativeWindow!", __FUNCTION__);
+                        ALOGE("%s: Cannot find native_handle_t!", __FUNCTION__);
                         return;
                     }
 
@@ -1407,6 +1408,7 @@ void CameraDevice::CallbackHandler::onMessageReceived(
                     ACaptureRequest* request = allocateACaptureRequest(requestSp, id_cstr);
                     (*onBufferLost)(context, session.get(), request, anw, frameNumber);
                     freeACaptureRequest(request);
+                    native_handle_delete(anw); // clean up anw as it was copied from AIDL
                     break;
                 }
             }
@@ -1923,7 +1925,7 @@ ScopedAStatus CameraDevice::ServiceCallback::onPrepared(int32_t streamId) {
         return ScopedAStatus::ok();
     }
     // We've found the window corresponding to the surface id.
-    const ANativeWindow *anw = it->second.first;
+    const native_handle_t *anw = it->second.first.mWindow;
     sp<AMessage> msg = new AMessage(kWhatPreparedCb, dev->mHandler);
     msg->setPointer(kContextKey, session->mPreparedCb.context);
     msg->setPointer(kAnwKey, (void *)anw);

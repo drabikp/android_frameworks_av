@@ -82,7 +82,7 @@ camera_status_t ACameraCaptureSession::capture(
 
 template <class T>
 camera_status_t ACameraCaptureSession::startStreaming(
-        /*optional*/T* callbacks, int numOutputWindows, ANativeWindow** windows,
+        /*optional*/T* callbacks, int numOutputWindows, ACameraWindowType** windows,
 	/*optional*/int* captureSequenceId)  {
 #ifdef __ANDROID_VNDK__
     std::shared_ptr<acam::CameraDevice> dev = getDevicePtr();

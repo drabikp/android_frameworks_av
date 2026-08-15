@@ -150,7 +150,7 @@ camera_status_t CameraDevice::submitRequestsLocked(
 template<class T>
 camera_status_t CameraDevice::startStreamingLocked(ACameraCaptureSession* session,
         /*optional*/T* callbacks, int numOutputWindows,
-        ANativeWindow** windows, /*optional*/int* captureSequenceId) {
+        ACameraWindowType** windows, /*optional*/int* captureSequenceId) {
     camera_status_t ret = checkCameraClosedOrErrorLocked();
     if (ret != ACAMERA_OK) {
         ALOGE("%s: camera is in closed or error state %d", __FUNCTION__, ret);
