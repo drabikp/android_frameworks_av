@@ -195,6 +195,7 @@ cc_test {
     ],
     static_libs: [
         "android.hardware.camera.common@1.0-helper",
+        "android.hidl.token@1.0",
     ],
     cflags: [
         "-D__ANDROID_VNDK__",

@@ -130,7 +130,7 @@ void ACaptureSessionOutputContainer_free(ACaptureSessionOutputContainer* contain
 
 EXPORT
 camera_status_t ACaptureSessionOutput_create(
-        ANativeWindow* window, /*out*/ACaptureSessionOutput** out) {
+        ACameraWindowType* window, /*out*/ACaptureSessionOutput** out) {
     ATRACE_CALL();
     if (window == nullptr || out == nullptr) {
         ALOGE("%s: Error: bad argument. window %p, out %p",
@@ -143,7 +143,7 @@ camera_status_t ACaptureSessionOutput_create(
 
 EXPORT
 camera_status_t ACaptureSessionSharedOutput_create(
-        ANativeWindow* window, /*out*/ACaptureSessionOutput** out) {
+        ACameraWindowType* window, /*out*/ACaptureSessionOutput** out) {
     ATRACE_CALL();
     if (window == nullptr || out == nullptr) {
         ALOGE("%s: Error: bad argument. window %p, out %p",
@@ -156,7 +156,7 @@ camera_status_t ACaptureSessionSharedOutput_create(
 
 EXPORT
 camera_status_t ACaptureSessionPhysicalOutput_create(
-        ANativeWindow* window, const char* physicalId,
+        ACameraWindowType* window, const char* physicalId,
         /*out*/ACaptureSessionOutput** out) {
     ATRACE_CALL();
     if (window == nullptr || physicalId == nullptr || out == nullptr) {
@@ -170,7 +170,7 @@ camera_status_t ACaptureSessionPhysicalOutput_create(
 
 EXPORT
 camera_status_t ACaptureSessionSharedOutput_add(ACaptureSessionOutput *out,
-        ANativeWindow* window) {
+        ACameraWindowType* window) {
     ATRACE_CALL();
     if ((window == nullptr) || (out == nullptr)) {
         ALOGE("%s: Error: bad argument. window %p, out %p",
@@ -196,7 +196,7 @@ camera_status_t ACaptureSessionSharedOutput_add(ACaptureSessionOutput *out,
 
 EXPORT
 camera_status_t ACaptureSessionSharedOutput_remove(ACaptureSessionOutput *out,
-        ANativeWindow* window) {
+        ACameraWindowType* window) {
     ATRACE_CALL();
     if ((window == nullptr) || (out == nullptr)) {
         ALOGE("%s: Error: bad argument. window %p, out %p",

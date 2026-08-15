@@ -72,7 +72,7 @@ camera_status_t setRepeatingRequestTemplate(
 template <class CallbackType>
 camera_status_t startStreamingTemplate(ACameraCaptureSession* session,
     /*optional*/CallbackType* callbacks,
-    int numOutputWindows, ANativeWindow** windows,
+    int numOutputWindows, ACameraWindowType** windows,
     /*optional*/int* captureSequenceId) {
     ATRACE_CALL();
     if (session == nullptr || windows == nullptr || numOutputWindows < 1) {
